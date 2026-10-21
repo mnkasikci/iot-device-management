@@ -266,3 +266,36 @@ Status: *Accepted* = decided and (being) built, *Proposed* = documented only, no
   - `Command.params` is a Postgres `jsonb` column (`@JdbcTypeCode(SqlTypes.JSON)`), so the REST
     API returns params as an object. Needed `quarkus.hibernate-orm.mapping.format.global=ignore`
     (Hibernate's own JSON mapper, not the REST one — we don't customize Jackson).
+
+## ADR-015 — Portal: plain Angular, server-side paging, REST snapshot + SSE deltas
+
+- **Status:** Accepted
+- **Context:** The portal must show thousands of devices live and send commands. The author
+  must be able to explain every part; the interview may extend it live.
+- **Decision:**
+  - Plain Angular (standalone components, signals, zoneless default) and hand-written CSS — no UI
+    framework. Components: `DeviceList`, `DeviceDetail`, `CommandPanel`, `Sparkline`; services
+    `DeviceApi` (all REST calls) and `LiveStream` (the one `EventSource`).
+  - **Server-side paging + filters** (`?page&size&online&type&q`) instead of loading all devices:
+    the browser holds 50 rows, however many devices exist.
+  - **Snapshot + deltas:** a page loads its data via REST, then merges each SSE batch by id
+    (list: rows of the current page; detail: device, history, commands). A new device registered
+    (stats `totalDevices` changes) triggers a reload of the list page.
+  - **`device-types.ts` is the one place** for device types and commands on the portal side:
+    per type the metrics (sparklines), commands with param inputs, and the list's key value.
+    Unknown types still get the common commands; a "custom" command row sends any name/params.
+  - Sparkline = ~30 lines of SVG `polyline`, no chart library.
+  - "x s ago" uses the server time of the last batch as its clock — no extra timer.
+- **Rejected:**
+  - Angular Material / a chart library: more to explain and to download for a table, some
+    inputs and a line; nothing here needs them.
+  - CDK virtual scroll over all devices: would need every device in the browser (10k+ rows of
+    live data) — paging keeps both REST and the browser small.
+  - NgRx/global store: two pages with local state; a signal per thing is enough.
+- **Consequences:**
+  - The detail chart gets at most one new point per second from the stream (the latest);
+    a device sending faster shows fewer points live than the backend's history has.
+  - A list filtered to "online" keeps showing a device that just went offline (badge turns
+    grey) until the next reload — the rows update in place, they aren't re-filtered.
+  - Min/max on the inputs are hints only; out-of-range values reach the device and come back as
+    FAILED with its message (ADR-013) — useful in the demo.

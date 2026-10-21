@@ -98,7 +98,26 @@ Status: *Accepted* = decided and (being) built, *Proposed* = documented only, no
 - **Rejected:**
   - WebSocket to the browser — not needed for one-way updates.
   - Pushing every telemetry message — would flood the browser.
-- **Consequences:** TODO
+- **Consequences:**
+  - `GET /api/stream` (`text/event-stream`), one JSON batch per second:
+    `{ts, stats, devices: [DeviceSummary…], commands: [Command…]}`. The portal loads the initial
+    state via REST and applies batches on top (same `DeviceSummary` shape as the REST list).
+  - **Dirty sets:** the socket and the command service only *mark* ids (`LiveUpdates.deviceChanged`
+    / `commandChanged`, a concurrent set — cheap, any thread). A 1 s `@Scheduled` tick drains the
+    sets, loads the current values (devices from Postgres in chunks of 1000 + memory, commands from
+    Postgres) and emits one batch. Cost per second ∝ devices that changed, not messages received:
+    a device sending 10 frames/s appears once. Pongs don't mark a device (would make every device
+    dirty every 30 s for nothing visible).
+  - The batch is sent even when empty: it carries the stats and acts as a heartbeat (keeps
+    proxies from closing an idle stream).
+  - Fan-out via a Mutiny `BroadcastProcessor` (hot stream). A browser that can't take a batch
+    per second skips batches (`onOverflow().drop()`) instead of the server buffering for it;
+    devices keep changing, so it catches up with the next batch. A skipped *command* change stays
+    stale until the user reopens the device (history is re-fetched via REST).
+  - Every browser gets every changed device, even ones not on its current page. At 10k devices
+    sending every 5 s that's ~2k summaries/s ≈ a few hundred KB/s per browser — fine for a
+    handful of operators; measured in Step 6. Next step if needed: per-subscriber filter
+    (stream only the page/device the user is looking at).
 
 ## ADR-007 — Scale-out: single instance, measured
 

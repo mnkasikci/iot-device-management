@@ -14,11 +14,16 @@ public class StatsResource {
     DeviceMetrics metrics;
 
     public record Stats(int connected, long totalDevices, long messagesReceived, long messagesPerSecond) {
+
+        /** Also sent once per second on the live stream. */
+        public static Stats current(DeviceMetrics metrics) {
+            return new Stats(metrics.connected(), Device.count(), metrics.messagesReceived(),
+                    metrics.messagesPerSecond());
+        }
     }
 
     @GET
     public Stats get() {
-        return new Stats(metrics.connected(), Device.count(), metrics.messagesReceived(),
-                metrics.messagesPerSecond());
+        return Stats.current(metrics);
     }
 }

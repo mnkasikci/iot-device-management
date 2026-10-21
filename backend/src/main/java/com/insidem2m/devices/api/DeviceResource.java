@@ -4,6 +4,7 @@ import com.insidem2m.devices.device.Device;
 import com.insidem2m.devices.device.DeviceState;
 import com.insidem2m.devices.device.DeviceState.TelemetryPoint;
 import com.insidem2m.devices.device.DeviceStateStore;
+import com.insidem2m.devices.device.DeviceSummary;
 import io.quarkus.panache.common.Sort;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.DefaultValue;
@@ -13,7 +14,6 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.QueryParam;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -30,10 +30,6 @@ public class DeviceResource {
 
     @Inject
     DeviceStateStore states;
-
-    public record DeviceSummary(String id, String deviceType, String firmware, boolean online,
-                                Instant firstSeen, Instant lastSeen, TelemetryPoint latest) {
-    }
 
     public record DeviceDetail(DeviceSummary device, List<TelemetryPoint> history) {
     }
@@ -79,11 +75,6 @@ public class DeviceResource {
     }
 
     private DeviceSummary toSummary(Device device) {
-        DeviceState state = states.get(device.id);
-        // The in-memory last-seen is fresher (every frame/pong); the DB value survives restarts.
-        Instant lastSeen = state != null ? state.lastSeen() : device.lastSeen;
-        TelemetryPoint latest = state != null ? state.latest() : null;
-        return new DeviceSummary(device.id, device.deviceType, device.firmware, device.online,
-                device.firstSeen, lastSeen, latest);
+        return DeviceSummary.of(device, states.get(device.id));
     }
 }

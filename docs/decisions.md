@@ -306,3 +306,24 @@ Status: *Accepted* = decided and (being) built, *Proposed* = documented only, no
     grey) until the next reload — the rows update in place, they aren't re-filtered.
   - Min/max on the inputs are hints only; out-of-range values reach the device and come back as
     FAILED with its message (ADR-013) — useful in the demo.
+
+## ADR-016 — Tests: real sockets in `@QuarkusTest`, one Playwright E2E over the whole system
+
+- **Status:** Accepted
+- **Context:** The interesting behaviour is in the interplay: socket ↔ DB ↔ REST ↔ SSE ↔ browser.
+  Mocks would test our assumptions about it, not the behaviour.
+- **Decision:**
+  - Backend `@QuarkusTest`s use a real JDK WebSocket client as the device and a real Postgres
+    (Dev Services): connect/hello/telemetry → REST; command → ACKED / ERROR → FAILED /
+    offline → FAILED / no ack → TIMEOUT (timeout shortened to 2 s in the test profile); a hello
+    shows up in the SSE stream.
+  - Portal unit tests (Vitest, `ng test`) only for pure logic (`device-types.ts`) and the shell.
+  - One Playwright E2E (`portal/e2e`, `npm run e2e`) starts backend dev mode, the portal and two
+    simulated devices: a device appears in the list, `setRelay` reaches ACKED, an invalid value
+    comes back FAILED with the device's message. `@playwright/test` pinned to 1.64.0; it drives
+    the installed Chrome (`channel: 'chrome'`), so no browser download.
+- **Rejected:** Component tests with mocked services for every component — slow to write, and the
+  E2E covers the same paths for real. Cypress — Playwright is lighter and runs headless in CI.
+- **Consequences:** The E2E needs Docker (Dev Services), Chrome, and a built simulator jar; it
+  takes ~25 s with a cold backend. Tests sleep-poll ("eventually") because the system is
+  asynchronous by design.

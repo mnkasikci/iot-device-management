@@ -128,7 +128,14 @@ Status: *Accepted* = decided and (being) built, *Proposed* = documented only, no
   that holds the device's socket.
 - **Rejected:** Building the cluster now — not enough time; one honest measurement beats an
   unproven cluster.
-- **Consequences:** TODO
+- **Consequences:**
+  - Measured (`docs/scaling.md`): one instance held 15k devices (3k msgs/s) at ~0.3 core and
+    10k devices at 10k msgs/s at ~0.35 core; ~11 KB heap per connection. The first limit hit
+    was the test machine's ephemeral ports (~16k), not the backend.
+  - The weak spot found: blocking DB work (`hello` upsert) shares the worker pool with
+    telemetry, so a DB outage stalls all device traffic. Fixes listed in `docs/scaling.md`.
+  - Multi-instance stays a design: the registry, command routing and the SSE dirty sets are all
+    per instance today.
 
 ## ADR-008 — Simulator: own Java app
 

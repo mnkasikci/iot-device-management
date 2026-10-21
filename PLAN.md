@@ -160,4 +160,4 @@ to the user (small, conventional-commit messages).
 | Step | Status | Notes |
 |---|---|---|
 | Plan | done | protocol: WebSocket direct to Quarkus (user decision) |
-| 0 | done (push pending user OK) | Quarkus 3.40.1.1, Angular 22.2.3. Colima needs `DOCKER_HOST` + `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE` (see CLAUDE.md). Compose Postgres on host port **5433** (local PG on 5432); `docker compose` not installed here, verified via `docker run`. |
+| 0 | done | Repo: https://github.com/mnkasikci/iot-device-management (public). Quarkus 3.40.1.1, Angular 22.2.3. Colima needs `DOCKER_HOST` + `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE` (see CLAUDE.md). Compose Postgres on host port **5433** (local PG on 5432); `docker compose` not installed here, verified via `docker run`. |

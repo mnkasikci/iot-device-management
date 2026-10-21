@@ -12,7 +12,9 @@ Status: *Accepted* = decided and (being) built, *Proposed* = documented only, no
 - **Context:** The team works with Angular and Java/Quarkus.
 - **Decision:** Backend in Quarkus, portal in Angular.
 - **Rejected:** Node.js / Go backend — no reason to deviate from the team's stack.
-- **Consequences:** TODO
+- **Consequences:** Quarkus brings what the system needs without extra libraries: WebSockets
+  Next, REST + SSE, Panache, scheduler, Micrometer, Dev Services. The simulator is plain Java
+  (JDK WebSocket client) so it shares the language but not the framework.
 
 ## ADR-002 — Device protocol: WebSocket directly to Quarkus
 
@@ -27,7 +29,12 @@ Status: *Accepted* = decided and (being) built, *Proposed* = documented only, no
     scaling behaviour visible and explainable. → the production path.
   - Raw TCP: no browser/tooling support, own framing.
   - HTTP polling: not a persistent bidirectional connection, command latency.
-- **Consequences:** TODO
+- **Consequences:**
+  - We own what a broker would do: liveness (ADR-003), the connection registry (ADR-012),
+    delivery acks (ADR-004) and, for more than one instance, command routing (ADR-007).
+  - Each connection costs ~11 kB heap; one instance held 15k devices at ~0.3 of a core
+    (`docs/scaling.md`). For hundreds of thousands of devices, an MQTT broker in front is the
+    production answer; the backend would then subscribe to topics instead of holding sockets.
 
 ## ADR-003 — Liveness: server ping + last-seen
 
@@ -160,6 +167,9 @@ Status: *Accepted* = decided and (being) built, *Proposed* = documented only, no
   - One extra dependency: Jackson (JSON), packaged with `maven-shade-plugin` into a fat jar.
   - Limit to expect in Step 6: one source IP has ~16k ephemeral ports on macOS towards one
     backend port → beyond that, several simulator processes / loopback aliases.
+    *Measured in Step 6: wrong in one detail* — on macOS the ~16k ports are a per-machine
+    pool, so other destination addresses don't help; beyond ~16k the simulators must run on
+    other machines/VMs (`docs/scaling.md`).
 
 ## ADR-009 — Out of scope (deliberately)
 

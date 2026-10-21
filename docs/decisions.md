@@ -56,7 +56,21 @@ Status: *Accepted* = decided and (being) built, *Proposed* = documented only, no
 - **Decision:** Each command carries a `commandId`; the device replies with `ack`.
   Status flow: `PENDING → SENT → ACKED / FAILED / TIMEOUT`.
 - **Rejected:** Fire-and-forget — no feedback to the operator.
-- **Consequences:** TODO
+- **Consequences:**
+  - `POST /api/devices/{id}/commands` stores a `Command` row (PENDING); device offline →
+    FAILED "device offline" at once; online → SENT and the frame
+    `{"type":"command","commandId",...}` goes out. It answers **202 Accepted** with the status
+    right now — the outcome comes later with the ack. `GET` on the same path = history, newest first.
+  - `ack` OK → ACKED, anything else → FAILED, the device's message is stored. A scheduled job
+    (`commands.timeout=10s`, checked every 2 s) turns SENT commands without an ack into TIMEOUT,
+    so a TIMEOUT shows up 10–12 s after sending.
+  - **At-most-once:** no retries. A command lost on the way (or whose ack is lost) ends as
+    TIMEOUT and the operator decides whether to resend. Retrying automatically would need
+    idempotent commands on the device (dedupe by `commandId`) — not worth it for a demo.
+  - Acks are matched by `commandId` + device, not by socket, so an ack sent after a reconnect
+    still counts. A device that loses the command (e.g. power loss before acking) → TIMEOUT.
+  - Metrics: `devices_commands_sent_total` (frames written), `devices_commands_acked_total`
+    (status OK).
 
 ## ADR-005 — Persistence: Postgres for registry + commands, telemetry in memory
 
@@ -181,3 +195,55 @@ Status: *Accepted* = decided and (being) built, *Proposed* = documented only, no
   A tiny race remains: if a close and a reconnect of the same device hit the DB at the same
   moment, the row can show offline until the next `hello`. Acceptable for a demo; the fix would
   be a connection generation number on the row.
+
+## ADR-013 — Command validation: the device decides, the backend only checks the shape
+
+- **Status:** Accepted
+- **Context:** Commands have names and params (`setInterval {seconds}`, `setTargetTemp {target}`,
+  `setRelay {on}`, `reboot {}`, wire-protocol table in `PLAN.md`). Someone has to reject
+  `setTargetTemp {"target": 99}` or a command a relay doesn't support.
+- **Decision:** The backend checks only what it needs to route and store a command: the device
+  exists (else 404), the body has a non-blank `name` (else 400), `params` is a JSON object
+  (default `{}`). Name and params are forwarded unchanged. The **device** validates and acks
+  `ERROR` with a message ("target must be a number between 5 and 30", "unknown command X"),
+  which ends up as FAILED + message in the command log.
+- **Rejected:**
+  - Validating every command per device type in the backend as well: the rules would live in
+    two places (backend + firmware) and drift apart; every new command or firmware version would
+    need a backend release. The device is the only one that knows what its firmware supports.
+- **Consequences:**
+  - Adding a command on the device side needs no backend change — the portal can send it at once.
+  - An invalid command costs one round trip to the device instead of an instant 400. The
+    operator still sees why it failed (the ack message).
+  - A device with buggy validation could accept nonsense; acceptable — it would also be the
+    device executing it. The portal (Step 5) offers only the known commands with sensible inputs.
+
+## ADR-014 — Command status changes: short transactions, conditional updates
+
+- **Status:** Accepted
+- **Context:** Three parties change a command's status concurrently: the REST request (send), the
+  device socket (ack) and the timeout job. On localhost the simulator acks in well under a
+  millisecond — faster than a transaction commits.
+- **Decision:** `CommandService` is the one place for the flow. Each status change is its own
+  short transaction (`QuarkusTransaction.requiringNew()`), never held open while writing to the
+  network. SENT is **committed before** the frame is written, so an ack can never arrive for a
+  command still shown as PENDING. Ack and timeout are conditional updates
+  (`... where id = ? and deviceId = ? and status = 'SENT'`): whichever comes first wins, the
+  other updates 0 rows and is ignored (logged). The `deviceId` condition stops a device from
+  acking another device's command.
+- **Rejected:**
+  - One `@Transactional` around persist + send + mark SENT: holds a DB connection during network
+    I/O, and the ack's transaction can't see the uncommitted command → lost ack, false TIMEOUT.
+  - Mark SENT only after the send succeeded: the ack can overtake it and be overwritten with
+    SENT (we'd then report TIMEOUT for an executed command).
+  - Optimistic locking (`@Version`) with retries: same safety, more code to explain.
+- **Consequences:**
+  - If writing the frame fails, the command goes SENT → FAILED "send failed: ...".
+  - A crash between PENDING and SENT leaves a PENDING row forever (nothing was sent, so it's
+    harmless, but it looks odd in the history). The timeout job could also expire old PENDING
+    rows — not done.
+  - Three small DB writes per command (insert, SENT, result). Commands are rare compared to
+    telemetry, so fine; the timeout check is one `UPDATE` using an index on `status`.
+  - `Command.params` is a Postgres `jsonb` column (`@JdbcTypeCode(SqlTypes.JSON)`), so the REST
+    API returns params as an object. Needed `quarkus.hibernate-orm.mapping.format.global=ignore`
+    (Hibernate's own JSON mapper, not the REST one — we don't customize Jackson).

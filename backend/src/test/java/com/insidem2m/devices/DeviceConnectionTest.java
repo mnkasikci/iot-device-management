@@ -46,6 +46,9 @@ class DeviceConnectionTest {
         given().get("/api/devices?type=thermostat&online=true").then()
                 .statusCode(200)
                 .body("items.id", hasItem("thermo-test-1"));
+        given().get("/api/devices?q=THERMO-TEST").then()  // case-insensitive substring
+                .statusCode(200)
+                .body("items.id", hasItem("thermo-test-1"));
         given().get("/api/stats").then()
                 .statusCode(200)
                 .body("connected", greaterThanOrEqualTo(1))

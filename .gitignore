@@ -16,3 +16,7 @@ dist/
 # Local environment
 .env
 *.log
+
+# Playwright
+test-results/
+playwright-report/

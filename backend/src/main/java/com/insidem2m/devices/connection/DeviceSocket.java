@@ -5,6 +5,7 @@ import com.insidem2m.devices.device.DeviceService;
 import com.insidem2m.devices.device.DeviceState;
 import com.insidem2m.devices.device.DeviceState.TelemetryPoint;
 import com.insidem2m.devices.device.DeviceStateStore;
+import com.insidem2m.devices.stream.LiveUpdates;
 import io.quarkus.logging.Log;
 import io.quarkus.websockets.next.OnClose;
 import io.quarkus.websockets.next.OnError;
@@ -43,6 +44,9 @@ public class DeviceSocket {
     @Inject
     CommandService commands;
 
+    @Inject
+    LiveUpdates live;
+
     @OnOpen
     void onOpen(WebSocketConnection connection) {
         String deviceId = deviceId(connection);
@@ -62,12 +66,14 @@ public class DeviceSocket {
             case DeviceMessage.Hello hello -> {
                 metrics.messageReceived("hello");
                 devices.onHello(deviceId, hello.deviceType(), hello.firmware());
+                live.deviceChanged(deviceId);
             }
             case DeviceMessage.Telemetry telemetry -> {
                 metrics.messageReceived("telemetry");
                 state.addTelemetry(new TelemetryPoint(
                         telemetry.ts() != null ? telemetry.ts() : System.currentTimeMillis(),
                         telemetry.data() != null ? telemetry.data() : Map.of()));
+                live.deviceChanged(deviceId);
             }
             case DeviceMessage.Ack ack -> {
                 metrics.messageReceived("ack");
@@ -87,6 +93,7 @@ public class DeviceSocket {
         String deviceId = deviceId(connection);
         if (registry.unregister(deviceId, connection)) {
             devices.markOffline(deviceId, states.getOrCreate(deviceId).lastSeen());
+            live.deviceChanged(deviceId);
             Log.debugf("Device %s disconnected", deviceId);
         }
     }

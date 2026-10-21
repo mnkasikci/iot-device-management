@@ -3,6 +3,7 @@ package com.insidem2m.devices.command;
 import com.insidem2m.devices.connection.CommandFrame;
 import com.insidem2m.devices.connection.ConnectionRegistry;
 import com.insidem2m.devices.connection.DeviceMetrics;
+import com.insidem2m.devices.stream.LiveUpdates;
 import io.quarkus.logging.Log;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.scheduler.Scheduled;
@@ -13,6 +14,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -36,6 +38,9 @@ public class CommandService {
     @Inject
     DeviceMetrics metrics;
 
+    @Inject
+    LiveUpdates live;
+
     /** Stores the command and sends it if the device is online. Returns the command's current state. */
     public Command send(String deviceId, String name, Map<String, Object> params) {
         UUID id = QuarkusTransaction.requiringNew().call(() -> create(deviceId, name, params).id);
@@ -43,6 +48,7 @@ public class CommandService {
         WebSocketConnection connection = registry.get(deviceId);
         if (connection == null) {
             complete(id, CommandStatus.FAILED, "device offline");
+            live.commandChanged(id);
             return Command.findById(id);
         }
 
@@ -57,6 +63,7 @@ public class CommandService {
             Log.warnf("Sending command %s to %s failed: %s", id, deviceId, e.getMessage());
             complete(id, CommandStatus.FAILED, "send failed: " + e.getMessage());
         }
+        live.commandChanged(id);
         return Command.findById(id);
     }
 
@@ -76,21 +83,32 @@ public class CommandService {
         if (updated == 0) {
             Log.infof("Ignoring ack from %s for command %s (unknown, other device, or already finished)",
                     deviceId, commandId);
-        } else if (result == CommandStatus.ACKED) {
+            return;
+        }
+        live.commandChanged(id);
+        if (result == CommandStatus.ACKED) {
             metrics.commandAcked();
         }
     }
 
-    /** SENT for longer than the timeout → TIMEOUT. One UPDATE statement, however many commands. */
+    /** SENT for longer than the timeout → TIMEOUT. One SELECT + one UPDATE, however many commands. */
     @Scheduled(every = "${commands.timeout-check-interval}")
     void timeOutStaleCommands() {
         Instant now = Instant.now();
-        int updated = QuarkusTransaction.requiringNew().call(() -> Command.update(
-                "status = ?1, message = ?2, completedAt = ?3 where status = ?4 and sentAt < ?5",
-                CommandStatus.TIMEOUT, "no ack within " + timeout.toSeconds() + "s", now,
-                CommandStatus.SENT, now.minus(timeout)));
-        if (updated > 0) {
-            Log.infof("%d command(s) timed out", updated);
+        List<UUID> stale = QuarkusTransaction.requiringNew().call(() -> {
+            List<UUID> ids = Command.<Command>list("status = ?1 and sentAt < ?2",
+                    CommandStatus.SENT, now.minus(timeout)).stream().map(c -> c.id).toList();
+            if (!ids.isEmpty()) {
+                // "and status = SENT" again: an ack that arrived since the SELECT wins.
+                Command.update("status = ?1, message = ?2, completedAt = ?3 where id in ?4 and status = ?5",
+                        CommandStatus.TIMEOUT, "no ack within " + timeout.toSeconds() + "s", now,
+                        ids, CommandStatus.SENT);
+            }
+            return ids;
+        });
+        if (!stale.isEmpty()) {
+            stale.forEach(live::commandChanged);
+            Log.infof("%d command(s) timed out", stale.size());
         }
     }
 

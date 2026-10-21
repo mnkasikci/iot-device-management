@@ -35,8 +35,19 @@ Status: *Accepted* = decided and (being) built, *Proposed* = documented only, no
 - **Context:** The backend must know when a device is gone, including silent drops.
 - **Decision:** Server-side auto-ping on the WebSocket plus a `lastSeen` timestamp; device is
   offline on close or ping timeout.
-- **Rejected:** MQTT Last Will — not available without a broker.
-- **Consequences:** TODO
+  - `quarkus.websockets-next.server.auto-ping-interval=30s`. Any frame or pong refreshes the
+    device's in-memory `lastSeen` (`DeviceState.touch()`).
+  - WebSockets Next has no "pong timeout" setting, so `LivenessCheck` (scheduled every 10 s)
+    closes connections silent for more than `devices.liveness-timeout=90s` (3 missed pings).
+    Closing triggers `@OnClose`, which marks the device offline — one code path for both cases.
+- **Rejected:**
+  - MQTT Last Will — not available without a broker.
+  - Relying on TCP alone: a half-open connection (power loss, NAT drop) is only noticed when a
+    write fails, which can take many minutes.
+- **Consequences:** A vanished device is offline after at most ~110 s (90 s timeout + 10 s check
+  interval + Vert.x's 10 s close-handshake timeout, because a dead peer never answers the close
+  frame). Verified by hand with a client that never answers pings. Pings cost one tiny frame per
+  device every 30 s — negligible next to telemetry.
 
 ## ADR-004 — Command delivery: own ack protocol
 
@@ -56,7 +67,13 @@ Status: *Accepted* = decided and (being) built, *Proposed* = documented only, no
   log. Telemetry stays in memory (ring buffer, last N points per device).
 - **Rejected:** Writing every telemetry message to Postgres — would be the first bottleneck.
   Production answer: a time-series DB (TimescaleDB / InfluxDB) — documented, not built.
-- **Consequences:** TODO
+- **Consequences:**
+  - The database is written only on `hello` and on disconnect; telemetry is a synchronized
+    `ArrayDeque` per device (`DeviceState`, last 100 points). The REST API merges both: registry
+    fields from Postgres, latest values / history / live `lastSeen` from memory.
+  - History is lost on restart and only exists on the instance holding the socket.
+  - Memory grows with devices × 100 points (each point is a small map). To be measured in
+    Step 6; the knob is `DeviceState.HISTORY_SIZE`.
 
 ## ADR-006 — Portal live updates: SSE, batched server-side
 
@@ -108,3 +125,45 @@ Status: *Accepted* = decided and (being) built, *Proposed* = documented only, no
 - **Rejected:** Flyway migrations — the right thing for production, overhead for a demo with
   two tables.
 - **Consequences:** Docker is required to run the backend in dev mode.
+
+## ADR-011 — Threading: device callbacks on worker threads, never on the event loop
+
+- **Status:** Accepted
+- **Context:** Quarkus/Vert.x serves every socket from a few event-loop threads (≈ 2 × CPU
+  cores). Blocking one of them (e.g. a JDBC call) stalls *every* connection it serves. Our
+  WebSocket callbacks do blocking work: `hello` upserts the `Device` row, close marks it offline
+  (Hibernate ORM + JDBC are blocking APIs).
+- **Decision:** All `DeviceSocket` callbacks return `void`. WebSockets Next treats such methods
+  as blocking and runs them on the **worker thread pool**, so the event loop only does network
+  I/O. Database writes live in `DeviceService` (`@Transactional`). Verified in the log: callbacks
+  run on `vert.x-worker-thread-N`.
+- **Rejected:**
+  - `@RunOnVirtualThread`: cheaper threads, good for connect storms — but the real limit during
+    a storm is the DB connection pool (default 20), not threads. Worker threads are the Quarkus
+    default and need no explanation of pinning rules. Easy switch later (one annotation).
+  - Reactive (Hibernate Reactive + `Uni` return types): non-blocking end to end, but a second
+    programming model to learn and explain for a gain we haven't measured we need.
+- **Consequences:** Every telemetry frame also hops to a worker thread (cheap, but a context
+  switch). If Step 6 shows the worker pool as a bottleneck, telemetry handling (memory-only) can
+  be made `@NonBlocking` while `hello`/close stay on workers.
+
+## ADR-012 — Connection registry: one socket per device, newest wins
+
+- **Status:** Accepted
+- **Context:** Commands (Step 3) must find "the" socket of a device. A device that reboots may
+  reconnect before the server has noticed that its old socket is dead.
+- **Decision:** `ConnectionRegistry` is a `ConcurrentHashMap<deviceId, WebSocketConnection>`.
+  A new connection replaces the old one and the old one is closed. On close, the entry is
+  removed only if it still points to the closing socket (`remove(key, value)`), and only then is
+  the device marked offline — so the old socket's close cannot mark a reconnected device offline.
+  The `online` column in Postgres mirrors the registry so the device list can filter and page in
+  SQL. On startup all devices are reset to offline (no sockets exist yet).
+- **Rejected:**
+  - Rejecting the second connection: a rebooted device would be locked out until the old
+    socket times out (up to ~110 s, see ADR-003).
+  - Deriving `online` only from the registry: always correct, but filtering/paging thousands of
+    devices would then happen in Java instead of SQL.
+- **Consequences:** The registry only knows this instance's sockets (multi-instance: ADR-007).
+  A tiny race remains: if a close and a reconnect of the same device hit the DB at the same
+  moment, the row can show offline until the next `hello`. Acceptable for a demo; the fix would
+  be a connection generation number on the row.

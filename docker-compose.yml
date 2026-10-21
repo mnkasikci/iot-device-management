@@ -1,0 +1,21 @@
+# Postgres for prod-like runs of the backend (java -jar / quarkus prod profile).
+# In dev (./mvnw quarkus:dev) this is not needed: Quarkus Dev Services starts its own Postgres.
+services:
+  postgres:
+    image: postgres:18 # same major version Quarkus Dev Services uses
+    environment:
+      POSTGRES_DB: devices
+      POSTGRES_USER: devices
+      POSTGRES_PASSWORD: devices
+    ports:
+      - "5433:5432" # host port 5433 so it doesn't clash with a locally installed Postgres
+    volumes:
+      - pgdata:/var/lib/postgresql # postgres 18+ keeps its data in a versioned subdirectory
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devices -d devices"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

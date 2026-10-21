@@ -1,0 +1,110 @@
+# Architecture decisions
+
+Short ADRs. Each one: context → decision → rejected alternatives → consequences.
+Seeded from the decisions table in `PLAN.md`; filled in as the implementation steps land.
+Status: *Accepted* = decided and (being) built, *Proposed* = documented only, not built.
+
+---
+
+## ADR-001 — Stack: Angular + Java/Quarkus
+
+- **Status:** Accepted
+- **Context:** The team works with Angular and Java/Quarkus.
+- **Decision:** Backend in Quarkus, portal in Angular.
+- **Rejected:** Node.js / Go backend — no reason to deviate from the team's stack.
+- **Consequences:** TODO
+
+## ADR-002 — Device protocol: WebSocket directly to Quarkus
+
+- **Status:** Accepted
+- **Context:** Devices need a persistent, bidirectional connection (data/status up,
+  commands down) and the system must handle many concurrent devices.
+- **Decision:** Devices connect via WebSocket to `ws://host:8080/ws/devices/{deviceId}`
+  (Quarkus WebSockets Next), JSON text frames with a `type` field.
+- **Rejected:**
+  - MQTT + broker (e.g. EMQX): the IoT standard and offloads connection handling, but adds
+    infrastructure and hides the interesting part. For a demo, owning the connections makes
+    scaling behaviour visible and explainable. → the production path.
+  - Raw TCP: no browser/tooling support, own framing.
+  - HTTP polling: not a persistent bidirectional connection, command latency.
+- **Consequences:** TODO
+
+## ADR-003 — Liveness: server ping + last-seen
+
+- **Status:** Accepted
+- **Context:** The backend must know when a device is gone, including silent drops.
+- **Decision:** Server-side auto-ping on the WebSocket plus a `lastSeen` timestamp; device is
+  offline on close or ping timeout.
+- **Rejected:** MQTT Last Will — not available without a broker.
+- **Consequences:** TODO
+
+## ADR-004 — Command delivery: own ack protocol
+
+- **Status:** Accepted
+- **Context:** Operators need feedback whether a command arrived and was executed.
+- **Decision:** Each command carries a `commandId`; the device replies with `ack`.
+  Status flow: `PENDING → SENT → ACKED / FAILED / TIMEOUT`.
+- **Rejected:** Fire-and-forget — no feedback to the operator.
+- **Consequences:** TODO
+
+## ADR-005 — Persistence: Postgres for registry + commands, telemetry in memory
+
+- **Status:** Accepted
+- **Context:** Telemetry volume grows with device count × frequency; registry and command
+  log are small and need durability.
+- **Decision:** PostgreSQL + Hibernate ORM Panache for the device registry and the command
+  log. Telemetry stays in memory (ring buffer, last N points per device).
+- **Rejected:** Writing every telemetry message to Postgres — would be the first bottleneck.
+  Production answer: a time-series DB (TimescaleDB / InfluxDB) — documented, not built.
+- **Consequences:** TODO
+
+## ADR-006 — Portal live updates: SSE, batched server-side
+
+- **Status:** Accepted
+- **Context:** The portal needs live device state; updates flow server → browser only.
+- **Decision:** Server-Sent Events from Quarkus, batched (≤ 1 push/s containing only devices
+  that changed).
+- **Rejected:**
+  - WebSocket to the browser — not needed for one-way updates.
+  - Pushing every telemetry message — would flood the browser.
+- **Consequences:** TODO
+
+## ADR-007 — Scale-out: single instance, measured
+
+- **Status:** Accepted (single instance) / Proposed (multi-instance design)
+- **Context:** "Must scale to many devices"; limited time (1–2 days).
+- **Decision:** Build and measure a single instance. Document the multi-instance design:
+  sticky load balancer + connection registry + Redis pub/sub to route a command to the node
+  that holds the device's socket.
+- **Rejected:** Building the cluster now — not enough time; one honest measurement beats an
+  unproven cluster.
+- **Consequences:** TODO
+
+## ADR-008 — Simulator: own Java app
+
+- **Status:** Accepted
+- **Context:** Load and demo need many devices that behave like devices (acks, interval
+  changes, reboots).
+- **Decision:** Own plain-Java app using the JDK `java.net.http.WebSocket`, N virtual devices
+  in one JVM on a scheduled executor.
+- **Rejected:** k6 / artillery — can't easily emulate device behaviour (acks, interval changes).
+- **Consequences:** TODO
+
+## ADR-009 — Out of scope (deliberately)
+
+- **Status:** Accepted
+- **Decision:** Not built: device auth/TLS (production: per-device token in the handshake
+  header, mTLS), multi-instance, Kubernetes, OTA firmware updates, multi-tenancy, telemetry
+  persistence, Grafana dashboards.
+- **Consequences:** Listed in the README so the scope is explicit.
+
+## ADR-010 — Database in dev: Quarkus Dev Services; docker-compose for prod-like runs
+
+- **Status:** Accepted
+- **Context:** Every developer (and the interview laptop) needs a Postgres with zero setup.
+- **Decision:** `./mvnw quarkus:dev` and tests use Dev Services (Quarkus starts a throwaway
+  Postgres container). `docker-compose.yml` provides Postgres for the prod profile.
+  Schema is generated by Hibernate (`drop-and-create` in dev, `update` in prod).
+- **Rejected:** Flyway migrations — the right thing for production, overhead for a demo with
+  two tables.
+- **Consequences:** Docker is required to run the backend in dev mode.

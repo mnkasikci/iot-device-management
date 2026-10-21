@@ -31,9 +31,12 @@ public class DeviceMetrics {
         Gauge.builder("devices.connected", registry, ConnectionRegistry::size)
                 .description("Devices with an open WebSocket on this instance")
                 .register(meters);
-        // Placeholders until the command flow exists (Step 3), so dashboards can be built now.
-        commandsSent = Counter.builder("devices.commands.sent").register(meters);
-        commandsAcked = Counter.builder("devices.commands.acked").register(meters);
+        commandsSent = Counter.builder("devices.commands.sent")
+                .description("Command frames written to a device socket")
+                .register(meters);
+        commandsAcked = Counter.builder("devices.commands.acked")
+                .description("Commands the device acked with status OK")
+                .register(meters);
     }
 
     /** @param type the frame's {@code type}, or "invalid" for frames that could not be decoded */

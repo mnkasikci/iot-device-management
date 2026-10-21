@@ -26,7 +26,7 @@ public sealed interface DeviceMessage {
     record Telemetry(Long ts, Map<String, Object> data) implements DeviceMessage {
     }
 
-    /** {@code {"type":"ack","commandId":"<uuid>","status":"OK","message":"..."}} — handled in Step 3. */
+    /** {@code {"type":"ack","commandId":"<uuid>","status":"OK","message":"..."}} — status OK or ERROR. */
     record Ack(String commandId, String status, String message) implements DeviceMessage {
     }
 }

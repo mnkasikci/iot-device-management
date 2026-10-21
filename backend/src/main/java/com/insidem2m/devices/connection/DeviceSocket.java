@@ -1,5 +1,6 @@
 package com.insidem2m.devices.connection;
 
+import com.insidem2m.devices.command.CommandService;
 import com.insidem2m.devices.device.DeviceService;
 import com.insidem2m.devices.device.DeviceState;
 import com.insidem2m.devices.device.DeviceState.TelemetryPoint;
@@ -39,6 +40,9 @@ public class DeviceSocket {
     @Inject
     DeviceMetrics metrics;
 
+    @Inject
+    CommandService commands;
+
     @OnOpen
     void onOpen(WebSocketConnection connection) {
         String deviceId = deviceId(connection);
@@ -67,7 +71,7 @@ public class DeviceSocket {
             }
             case DeviceMessage.Ack ack -> {
                 metrics.messageReceived("ack");
-                Log.debugf("Ack from %s: %s", deviceId, ack); // command flow: Step 3
+                commands.onAck(deviceId, ack.commandId(), ack.status(), ack.message());
             }
         }
     }

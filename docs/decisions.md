@@ -105,7 +105,21 @@ Status: *Accepted* = decided and (being) built, *Proposed* = documented only, no
 - **Decision:** Own plain-Java app using the JDK `java.net.http.WebSocket`, N virtual devices
   in one JVM on a scheduled executor.
 - **Rejected:** k6 / artillery — can't easily emulate device behaviour (acks, interval changes).
-- **Consequences:** TODO
+- **Consequences:**
+  - One `ScheduledExecutorService` (one thread per CPU core) and one `HttpClient` for all
+    devices; a device is just an object with a timer, so thousands fit in one JVM.
+  - The JDK WebSocket allows only one send in flight; telemetry (timer thread) and acks (listener
+    thread) can overlap, so each device chains its sends (`lastSend.thenCompose(...)`).
+  - Load-shaping that matters at scale: `--ramp` (devices started per second) avoids a connect
+    storm; each device's first telemetry is at a random offset inside the interval, so 10k
+    devices don't all send in the same millisecond; reconnects use exponential backoff
+    (1 → 30 s) with jitter. Verified: after a backend restart, 100 devices reconnected spread
+    over ~30 s instead of all at once.
+  - Device-type logic sits behind `DeviceModel` (`Thermostat`, `Relay`); a new type is one class
+    plus one line in `DeviceModel.create`. Common commands are in `VirtualDevice.handleCommand`.
+  - One extra dependency: Jackson (JSON), packaged with `maven-shade-plugin` into a fat jar.
+  - Limit to expect in Step 6: one source IP has ~16k ephemeral ports on macOS towards one
+    backend port → beyond that, several simulator processes / loopback aliases.
 
 ## ADR-009 — Out of scope (deliberately)
 

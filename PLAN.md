@@ -53,7 +53,17 @@ Server → device:
 ```
 Device types: `thermostat` (temperature, humidity, `setTargetTemp`) and `relay` (state on/off,
 power draw, `setRelay`). Common commands: `reboot`, `setInterval`. Unknown command → ack
-`ERROR`. Keep command and device-type handling in one obvious place on each side — that is
+`ERROR`.
+
+Exact payloads (as implemented by the simulator in Step 2):
+
+| Type | Telemetry `data` | Command `name` → `params` |
+|---|---|---|
+| all | — | `reboot` → `{}` (ack, close, reconnect after 3 s) · `setInterval` → `{"seconds": 1..3600}` |
+| `thermostat` | `{"temperature": 21.4, "humidity": 43.0, "targetTemp": 21.0}` | `setTargetTemp` → `{"target": 5..30}` |
+| `relay` | `{"on": true, "power": 61.3}` | `setRelay` → `{"on": true\|false}` |
+
+Invalid params → ack `ERROR` with a message saying what is expected. Keep command and device-type handling in one obvious place on each side — that is
 where the live-pairing feature will most likely land.
 
 ## Repo layout
@@ -162,3 +172,4 @@ to the user (small, conventional-commit messages).
 | Plan | done | protocol: WebSocket direct to Quarkus (user decision) |
 | 0 | done | Repo: https://github.com/mnkasikci/iot-device-management (public). Quarkus 3.40.1.1, Angular 22.2.3. Colima needs `DOCKER_HOST` + `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE` (see CLAUDE.md). Compose Postgres on host port **5433** (local PG on 5432); `docker compose` not installed here, verified via `docker run`. |
 | 1 | done | `/ws/devices/{id}` + `ConnectionRegistry` (newest socket wins), sealed `DeviceMessage` switch in `DeviceSocket.onMessage` = the one place for message types. Callbacks on worker threads (ADR-011). `LivenessCheck` closes sockets silent > 90 s (no pong-timeout setting in WebSockets Next; ADR-003). REST `/api/devices`, `/api/devices/{id}`, `/api/stats`; metrics `devices_*` at `/q/metrics`. Added `quarkus-scheduler`, `rest-assured` (test). Verified: 3 `@QuarkusTest`s green + manual JDK-WebSocket client against dev mode (filters, paging, 404, ring buffer keeps last 100, silent client closed after timeout + 10 s Vert.x close timeout). |
+| 2 | done | `simulator/`: `VirtualDevice` (connection, `handleCommand` = one place for commands), `DeviceModel` + `Thermostat`/`Relay` (one place for device types: `DeviceModel.create`). Payloads now in the wire-protocol table above. Added `jackson-databind`, `maven-shade-plugin`. Verified: `--count 100` → backend shows 100 online, 50/50 types, 50 msgs/s; commands/acks/reboot/abrupt drop/backoff checked against a throwaway raw-socket WS server (backend has no command endpoint until Step 3); backend restart → all 100 back within ~30 s, spread by jitter. |

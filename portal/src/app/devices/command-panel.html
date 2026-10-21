@@ -1,0 +1,47 @@
+<section class="card">
+  <h3>Commands</h3>
+  @if (!online()) {
+    <p class="muted">Device is offline — commands will fail immediately.</p>
+  }
+  @for (cmd of commands(); track cmd.name) {
+    <div class="command-row">
+      <span class="command-label">{{ cmd.label }}</span>
+      @for (p of cmd.params; track p.name) {
+        @if (p.kind === 'number') {
+          <label>
+            <input
+              type="number"
+              [attr.aria-label]="cmd.label + ' ' + p.label"
+              [value]="p.default"
+              [attr.min]="p.min"
+              [attr.max]="p.max"
+              (input)="setValue(cmd, p, $any($event.target).value)"
+            />
+            {{ p.label }}
+          </label>
+        } @else {
+          <label>
+            <input
+              type="checkbox"
+              [checked]="p.default"
+              (change)="setValue(cmd, p, $any($event.target).checked)"
+            />
+            {{ p.label }}
+          </label>
+        }
+      }
+      <button (click)="send(cmd)" [disabled]="busy()">Send {{ cmd.name }}</button>
+    </div>
+  }
+  <div class="command-row">
+    <span class="command-label">Custom</span>
+    <input #customName placeholder="name" aria-label="Custom command name" class="short" />
+    <input #customParams placeholder='params JSON, e.g. {"seconds":5}' aria-label="Custom params" />
+    <button (click)="sendCustom(customName.value, customParams.value)" [disabled]="busy()">
+      Send
+    </button>
+  </div>
+  @if (error()) {
+    <p class="error">{{ error() }}</p>
+  }
+</section>

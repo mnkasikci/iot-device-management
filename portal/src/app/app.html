@@ -1,5 +1,16 @@
-<header>
-  <h1>Device Portal</h1>
+<header class="topbar">
+  <h1><a routerLink="/devices">Device Portal</a></h1>
+  @if (live.stats(); as s) {
+    <span
+      ><strong>{{ s.connected }}</strong> online / {{ s.totalDevices }} devices</span
+    >
+    <span
+      ><strong>{{ s.messagesPerSecond }}</strong> msgs/s</span
+    >
+  }
+  <span class="live" [class.on]="live.connected()">
+    {{ live.connected() ? 'live' : 'reconnecting…' }}
+  </span>
 </header>
 <main>
   <router-outlet />

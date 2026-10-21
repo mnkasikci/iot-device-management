@@ -1,0 +1,74 @@
+<p><a routerLink="/devices">‹ All devices</a></p>
+
+@if (error()) {
+  <p class="error">{{ error() }}</p>
+}
+
+@if (device(); as d) {
+  <header class="detail-header">
+    <h2>{{ d.id }}</h2>
+    <span class="badge" [class.online]="d.online">{{ d.online ? 'online' : 'offline' }}</span>
+    <span class="muted">
+      {{ spec().label }} · firmware {{ d.firmware ?? '—' }} · last seen
+      {{ timeAgo(d.lastSeen, live.now()) }} · first seen {{ timeAgo(d.firstSeen, live.now()) }}
+    </span>
+  </header>
+
+  <div class="metrics">
+    @for (s of series(); track s.metric.key) {
+      <section class="card metric">
+        <div class="muted">{{ s.metric.label }}</div>
+        <div class="value">
+          {{ s.values.length ? s.values[s.values.length - 1].toFixed(1) : '—' }}
+          <small>{{ s.metric.unit }}</small>
+        </div>
+        <app-sparkline [values]="s.values" />
+      </section>
+    }
+    <section class="card metric">
+      <div class="muted">Latest telemetry</div>
+      <code>{{ d.latest ? (d.latest.data | json) : '—' }}</code>
+    </section>
+  </div>
+
+  <app-command-panel
+    [deviceId]="d.id"
+    [deviceType]="d.deviceType"
+    [online]="d.online"
+    (sent)="onSent($event)"
+  />
+
+  <section class="card">
+    <h3>Command history</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Sent</th>
+          <th>Command</th>
+          <th>Params</th>
+          <th>Status</th>
+          <th>Message</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (c of commands(); track c.id) {
+          <tr>
+            <td>{{ timeAgo(c.createdAt, live.now()) }}</td>
+            <td>{{ c.name }}</td>
+            <td>
+              <code>{{ c.params | json }}</code>
+            </td>
+            <td>
+              <span [class]="'status ' + c.status">{{ c.status }}</span>
+            </td>
+            <td>{{ c.message ?? '' }}</td>
+          </tr>
+        } @empty {
+          <tr>
+            <td colspan="5" class="muted">No commands sent yet.</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </section>
+}

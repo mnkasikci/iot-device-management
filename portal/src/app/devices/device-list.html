@@ -1,0 +1,61 @@
+<div class="toolbar">
+  <input
+    type="search"
+    placeholder="Search id…"
+    [value]="search()"
+    (input)="setSearch($any($event.target).value)"
+  />
+  <select aria-label="Status" (change)="setOnline($any($event.target).value)">
+    <option value="">All states</option>
+    <option value="true">Online</option>
+    <option value="false">Offline</option>
+  </select>
+  <select aria-label="Type" (change)="setType($any($event.target).value)">
+    <option value="">All types</option>
+    @for (t of types; track t) {
+      <option [value]="t">{{ typeSpec(t).label }}</option>
+    }
+  </select>
+  <span class="muted">{{ total() }} devices</span>
+</div>
+
+@if (error()) {
+  <p class="error">{{ error() }}</p>
+}
+
+<table class="devices">
+  <thead>
+    <tr>
+      <th>Device</th>
+      <th>Type</th>
+      <th>Status</th>
+      <th>Last seen</th>
+      <th>Value</th>
+    </tr>
+  </thead>
+  <tbody>
+    @for (d of rows(); track d.id) {
+      <tr [routerLink]="['/devices', d.id]">
+        <td>
+          <a [routerLink]="['/devices', d.id]">{{ d.id }}</a>
+        </td>
+        <td>{{ typeSpec(d.deviceType).label }}</td>
+        <td>
+          <span class="badge" [class.online]="d.online">{{ d.online ? 'online' : 'offline' }}</span>
+        </td>
+        <td>{{ timeAgo(d.lastSeen, live.now()) }}</td>
+        <td class="num">{{ keyValue(d.deviceType, d.latest) }}</td>
+      </tr>
+    } @empty {
+      <tr>
+        <td colspan="5" class="muted">No devices match. Start the simulator to see some.</td>
+      </tr>
+    }
+  </tbody>
+</table>
+
+<div class="pager">
+  <button (click)="goTo(page() - 1)" [disabled]="page() === 0">‹ Prev</button>
+  <span>Page {{ page() + 1 }} / {{ pages() }}</span>
+  <button (click)="goTo(page() + 1)" [disabled]="page() + 1 >= pages()">Next ›</button>
+</div>

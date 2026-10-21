@@ -1,1 +1,193 @@
-/* You can add global styles to this file, and also import other style files */
+/* Global styles: the portal is small, so most styling lives here instead of per component. */
+:root {
+  --header-bg: #1f2a37;
+  --border: #dde2e8;
+  --muted: #6b7280;
+  --good: #16a34a;
+  --bad: #dc2626;
+  --warn: #d97706;
+  --info: #2563eb;
+  --card-bg: #fff;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  font-size: 15px;
+  color: #111827;
+  background: #f5f7fa;
+}
+
+body {
+  margin: 0;
+}
+
+a {
+  color: var(--info);
+}
+
+h2,
+h3 {
+  margin: 0 0 0.5rem;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.error {
+  color: var(--bad);
+}
+
+input,
+select,
+button {
+  font: inherit;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+input[type='number'] {
+  width: 5rem;
+}
+
+input.short {
+  width: 8rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card-bg);
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+
+th {
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+td.num {
+  font-variant-numeric: tabular-nums;
+}
+
+table.devices tbody tr {
+  cursor: pointer;
+}
+
+table.devices tbody tr:hover {
+  background: #f0f4ff;
+}
+
+.toolbar,
+.pager {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin: 0.75rem 0;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  background: #e5e7eb;
+  color: var(--muted);
+}
+
+.badge.online {
+  background: #dcfce7;
+  color: var(--good);
+}
+
+.status {
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.status.ACKED {
+  color: var(--good);
+}
+
+.status.FAILED,
+.status.TIMEOUT {
+  color: var(--bad);
+}
+
+.status.SENT,
+.status.PENDING {
+  color: var(--warn);
+}
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.9rem 1rem;
+  margin: 0.75rem 0;
+}
+
+.detail-header {
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.metrics {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.metric {
+  min-width: 180px;
+  margin: 0;
+}
+
+.metric .value {
+  font-size: 1.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric code {
+  font-size: 0.8rem;
+  word-break: break-all;
+}
+
+.sparkline {
+  display: block;
+  color: var(--info);
+}
+
+.command-row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.35rem 0;
+  flex-wrap: wrap;
+}
+
+.command-label {
+  min-width: 10rem;
+}

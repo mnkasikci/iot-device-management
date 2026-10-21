@@ -36,6 +36,9 @@ public class DeviceSocket {
     @Inject
     DeviceService devices;
 
+    @Inject
+    DeviceMetrics metrics;
+
     @OnOpen
     void onOpen(WebSocketConnection connection) {
         String deviceId = deviceId(connection);
@@ -52,11 +55,20 @@ public class DeviceSocket {
         state.touch();
 
         switch (message) {
-            case DeviceMessage.Hello hello -> devices.onHello(deviceId, hello.deviceType(), hello.firmware());
-            case DeviceMessage.Telemetry telemetry -> state.addTelemetry(new TelemetryPoint(
-                    telemetry.ts() != null ? telemetry.ts() : System.currentTimeMillis(),
-                    telemetry.data() != null ? telemetry.data() : Map.of()));
-            case DeviceMessage.Ack ack -> Log.debugf("Ack from %s: %s", deviceId, ack); // command flow: Step 3
+            case DeviceMessage.Hello hello -> {
+                metrics.messageReceived("hello");
+                devices.onHello(deviceId, hello.deviceType(), hello.firmware());
+            }
+            case DeviceMessage.Telemetry telemetry -> {
+                metrics.messageReceived("telemetry");
+                state.addTelemetry(new TelemetryPoint(
+                        telemetry.ts() != null ? telemetry.ts() : System.currentTimeMillis(),
+                        telemetry.data() != null ? telemetry.data() : Map.of()));
+            }
+            case DeviceMessage.Ack ack -> {
+                metrics.messageReceived("ack");
+                Log.debugf("Ack from %s: %s", deviceId, ack); // command flow: Step 3
+            }
         }
     }
 
@@ -78,6 +90,7 @@ public class DeviceSocket {
     /** Malformed JSON or unknown {@code type}: log and keep the connection (other errors close it). */
     @OnError
     void onDecodeError(WebSocketConnection connection, TextDecodeException e) {
+        metrics.messageReceived("invalid");
         Log.warnf("Device %s sent an unreadable frame: %s", deviceId(connection), e.getMessage());
     }
 

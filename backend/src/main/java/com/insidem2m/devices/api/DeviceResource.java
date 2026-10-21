@@ -37,12 +37,13 @@ public class DeviceResource {
     public record Page<T>(List<T> items, int page, int size, long total) {
     }
 
-    /** {@code GET /api/devices?page=0&size=50&online=true&type=relay} — all filters optional. */
+    /** {@code GET /api/devices?page=0&size=50&online=true&type=relay&q=sim-001} — all filters optional. */
     @GET
     public Page<DeviceSummary> list(@QueryParam("page") @DefaultValue("0") int page,
                                     @QueryParam("size") @DefaultValue("50") int size,
                                     @QueryParam("online") Boolean online,
-                                    @QueryParam("type") String type) {
+                                    @QueryParam("type") String type,
+                                    @QueryParam("q") String search) {
         page = Math.max(page, 0);
         size = Math.clamp(size, 1, MAX_PAGE_SIZE);
 
@@ -55,6 +56,11 @@ public class DeviceResource {
         if (type != null && !type.isBlank()) {
             conditions.add("deviceType = :type");
             params.put("type", type);
+        }
+        if (search != null && !search.isBlank()) {
+            // Substring match on the id; fine for thousands of rows (a trigram index would be next).
+            conditions.add("lower(id) like :search");
+            params.put("search", "%" + search.toLowerCase() + "%");
         }
 
         var query = Device.<Device>find(String.join(" and ", conditions), Sort.by("id"), params)
